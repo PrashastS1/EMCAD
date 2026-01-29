@@ -5,18 +5,12 @@ Official Pytorch implementation of the paper [EMCAD: Efficient Multi-scale Convo
 [Md Mostafijur Rahman](https://github.com/mostafij-rahman), [Mustafa Munir](https://github.com/mmunir127), [Radu Marculescu](https://radum.ece.utexas.edu/)
 <p>The University of Texas at Austin</p>
 
-#### 🔍 **Check out our CVPR 2025 paper! [LoMix](https://github.com/SLDGroup/LoMix)**
-#### 🔍 **Check out our CVPR 2025 paper! [MK-UNet](https://github.com/SLDGroup/MK-UNet)**
-#### 🔍 **Check out our CVPR 2025 paper! [EfficientMedNeXt](https://github.com/SLDGroup/EfficientMedNeXt)** 
-#### 🔍 **Check out our CVPR 2025 paper! [EffiDec3D](https://github.com/SLDGroup/EffiDec3D)** 
-#### 🔍 **Check out our CVPRW 2024 paper! [PP-SAM](https://github.com/SLDGroup/PP-SAM)** 
-#### 🔍 **Check out our WACV 2024 paper! [G-CASCADE](https://github.com/SLDGroup/G-CASCADE)**
-#### 🔍 **Check out our MIDL 2023 paper! [MERIT](https://github.com/SLDGroup/MERIT)**
-#### 🔍 **Check out our WACV 2023 paper! [CASCADE](https://github.com/SLDGroup/CASCADE)**
+#### 🔍 **Check out our papers: [LoMix](https://github.com/SLDGroup/LoMix) [NeurIPS 2025], [EfficientMedNeXt](https://github.com/SLDGroup/EfficientMedNeXt) [MICCAI 2025], [EffiDec3D](https://github.com/SLDGroup/EffiDec3D) [CVPR 2025], [MK-UNet](https://github.com/SLDGroup/MK-UNet) [ICCVW 2025], [PP-SAM](https://github.com/SLDGroup/PP-SAM) [CVPRW 2024], [G-CASCADE](https://github.com/SLDGroup/G-CASCADE) [WACV 2024], [MERIT](https://github.com/SLDGroup/MERIT) [MIDL 2023], [CASCADE](https://github.com/SLDGroup/CASCADE) [WACV 2023]**
 
 
 ## Update
 
+### **🚀 January 12, 2026: Polyp training and inference code released!!!!**
 ### **➡️ Please follow our [CASCADE](https://github.com/SLDGroup/CASCADE) training and inference code for ACDC dataset!!!**
 ### **🚀 May 6, 2025: Synapse inference code released!!!**
 ### **🚀 September 12, 2024: Synapse training code released!!!**
@@ -84,6 +78,9 @@ cd into EMCAD
 python -W ignore train_synapse.py --root_path /path/to/train/data --volume_path path/to/test/data --encoder pvt_v2_b2         # replace --root_path and --volume_path with your actual path to data.
 
 ```
+
+### Trained Weights on Synapse Dataset:
+You can download the trained weights on Synapse dataset from [Google Drive](https://drive.google.com/drive/folders/1S-hxcgMlTFEX9GJGTUF7XWdZBGx7MiZl?usp=sharing).   
 
 ### Testing:
 ```
