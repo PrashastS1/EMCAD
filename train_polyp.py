@@ -49,31 +49,41 @@ def iou(predicted, labels):
     union = predicted_flat.sum() + labels_flat.sum() - intersection
     return (intersection + smooth) / (union + smooth)
 
-def compute_confidence_weights(predictions, epsilon=0.1, num_heads=4):
+def boundary_loss(pred, mask, boundary_kernel_size=3):
     """
-    Compute dynamic loss weights based on each head's prediction confidence.
-    
-    Confidence = mean(|sigmoid(p) - 0.5|) * 2, ranging from 0 (maximally uncertain) to 1 (fully confident).
-    Weights are normalized so they sum to num_heads, preserving the overall loss scale.
+    Auxiliary boundary-aware loss for explicit boundary supervision.
+    Combines boundary-specific Dice loss and boundary-weighted BCE.
     
     Args:
-        predictions: list of raw logit tensors [P[0], P[1], P[2], P[3]]
-        epsilon: stability floor to prevent zero weights (default: 0.1)
-        num_heads: number of heads for normalization (default: 4)
+        pred: raw logits (B, 1, H, W)
+        mask: ground truth binary mask (B, 1, H, W)
+        boundary_kernel_size: kernel size for morphological gradient (default: 3)
     
     Returns:
-        list of float weights, one per head
+        scalar loss value
     """
-    confidences = []
-    with torch.no_grad():
-        for p in predictions:
-            probs = torch.sigmoid(p)
-            confidence = (torch.abs(probs - 0.5) * 2).mean().item()
-            confidences.append(confidence + epsilon)
+    pad = boundary_kernel_size // 2
     
-    total = sum(confidences)
-    weights = [(c / total) * num_heads for c in confidences]
-    return weights
+    # Extract boundary via morphological gradient: dilation - erosion
+    dilated = F.max_pool2d(mask, kernel_size=boundary_kernel_size, stride=1, padding=pad)
+    eroded = -F.max_pool2d(-mask, kernel_size=boundary_kernel_size, stride=1, padding=pad)
+    boundary = (dilated - eroded).clamp(0, 1)
+    
+    # 1. Boundary-specific Dice loss (Dice computed only on boundary regions)
+    pred_sigmoid = torch.sigmoid(pred)
+    smooth = 1e-5
+    boundary_pred = pred_sigmoid * boundary
+    boundary_gt = mask * boundary
+    intersection = (boundary_pred * boundary_gt).sum(dim=(2, 3))
+    total = boundary_pred.sum(dim=(2, 3)) + boundary_gt.sum(dim=(2, 3))
+    dice_loss = 1 - (2 * intersection + smooth) / (total + smooth)
+    
+    # 2. Boundary-weighted BCE (10x weight on boundary pixels, 1x elsewhere)
+    weight_map = 1 + 9 * boundary
+    bce = F.binary_cross_entropy_with_logits(pred, mask, reduction='none')
+    weighted_bce = (weight_map * bce).sum(dim=(2, 3)) / weight_map.sum(dim=(2, 3))
+    
+    return (dice_loss + weighted_bce).mean()
 
 def test(model, path, dataset, opt):
     data_path = os.path.join(path, dataset)
@@ -158,11 +168,12 @@ def train(train_loader, model, optimizer, epoch, opt, model_name):
             loss_p4 = structure_loss(P[3], gts)
             loss_p1234 = structure_loss(P[0]+P[1]+P[2]+P[3], gts)
 
-            # Dynamic confidence-based loss weights for individual heads
-            head_weights = compute_confidence_weights([P[0], P[1], P[2], P[3]])
-            loss = (head_weights[0]*loss_p1 + head_weights[1]*loss_p2 +
-                    head_weights[2]*loss_p3 + head_weights[3]*loss_p4 +
-                    1.0*loss_p1234)
+            # Auxiliary boundary loss on combined prediction
+            loss_bound = boundary_loss(P[0]+P[1]+P[2]+P[3], gts)
+
+            weights = [1, 1, 1, 1, 1]
+            loss = (weights[0]*loss_p1 + weights[1]*loss_p2 + weights[2]*loss_p3 +
+                    weights[3]*loss_p4 + weights[4]*loss_p1234 + loss_bound)
 
             loss.backward()
             clip_gradient(optimizer, opt.clip)
@@ -172,10 +183,9 @@ def train(train_loader, model, optimizer, epoch, opt, model_name):
                 loss_record.update(loss.data, opt.batchsize)
                 
         if i % 100 == 0 or i == total_step:
-            w_str = ', '.join([f'{w:.3f}' for w in head_weights])
             print(f'{datetime.now()} Epoch [{epoch:03d}/{opt.epoch:03d}], Step [{i:04d}/{total_step:04d}], '
                   f'LR: {optimizer.param_groups[0]["lr"]:.6f}, Loss: {loss_record.show():.4f}, '
-                  f'Weights(p1,p2,p3,p4): [{w_str}]')
+                  f'BoundaryLoss: {loss_bound.item():.4f}')
         
     total_train_time += (time.time() - epoch_start)
     
