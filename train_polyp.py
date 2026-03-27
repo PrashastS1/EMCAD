@@ -49,6 +49,32 @@ def iou(predicted, labels):
     union = predicted_flat.sum() + labels_flat.sum() - intersection
     return (intersection + smooth) / (union + smooth)
 
+def compute_confidence_weights(predictions, epsilon=0.1, num_heads=4):
+    """
+    Compute dynamic loss weights based on each head's prediction confidence.
+    
+    Confidence = mean(|sigmoid(p) - 0.5|) * 2, ranging from 0 (maximally uncertain) to 1 (fully confident).
+    Weights are normalized so they sum to num_heads, preserving the overall loss scale.
+    
+    Args:
+        predictions: list of raw logit tensors [P[0], P[1], P[2], P[3]]
+        epsilon: stability floor to prevent zero weights (default: 0.1)
+        num_heads: number of heads for normalization (default: 4)
+    
+    Returns:
+        list of float weights, one per head
+    """
+    confidences = []
+    with torch.no_grad():
+        for p in predictions:
+            probs = torch.sigmoid(p)
+            confidence = (torch.abs(probs - 0.5) * 2).mean().item()
+            confidences.append(confidence + epsilon)
+    
+    total = sum(confidences)
+    weights = [(c / total) * num_heads for c in confidences]
+    return weights
+
 def test(model, path, dataset, opt):
     data_path = os.path.join(path, dataset)
     image_root = f'{data_path}/images/'
@@ -132,8 +158,11 @@ def train(train_loader, model, optimizer, epoch, opt, model_name):
             loss_p4 = structure_loss(P[3], gts)
             loss_p1234 = structure_loss(P[0]+P[1]+P[2]+P[3], gts)
 
-            weights = [1, 1, 1, 1, 1]
-            loss = weights[0]*loss_p1 + weights[1]*loss_p2 + weights[2]*loss_p3 + weights[3]*loss_p4 + weights[4]*loss_p1234
+            # Dynamic confidence-based loss weights for individual heads
+            head_weights = compute_confidence_weights([P[0], P[1], P[2], P[3]])
+            loss = (head_weights[0]*loss_p1 + head_weights[1]*loss_p2 +
+                    head_weights[2]*loss_p3 + head_weights[3]*loss_p4 +
+                    1.0*loss_p1234)
 
             loss.backward()
             clip_gradient(optimizer, opt.clip)
@@ -143,8 +172,10 @@ def train(train_loader, model, optimizer, epoch, opt, model_name):
                 loss_record.update(loss.data, opt.batchsize)
                 
         if i % 100 == 0 or i == total_step:
+            w_str = ', '.join([f'{w:.3f}' for w in head_weights])
             print(f'{datetime.now()} Epoch [{epoch:03d}/{opt.epoch:03d}], Step [{i:04d}/{total_step:04d}], '
-                  f'LR: {optimizer.param_groups[0]["lr"]:.6f}, Loss: {loss_record.show():.4f}')
+                  f'LR: {optimizer.param_groups[0]["lr"]:.6f}, Loss: {loss_record.show():.4f}, '
+                  f'Weights(p1,p2,p3,p4): [{w_str}]')
         
     total_train_time += (time.time() - epoch_start)
     
