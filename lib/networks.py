@@ -7,6 +7,36 @@ from lib.resnet import resnet18, resnet34, resnet50, resnet101, resnet152
 from lib.decoders import EMCAD
 
 
+class MultiScaleFusion(nn.Module):
+    """
+    Learned multi-scale prediction fusion via spatial attention.
+    Replaces naive sum of multi-scale heads with attention-weighted combination.
+    Learns per-pixel, per-scale weights so different spatial regions can
+    prefer different scales (e.g., boundaries prefer high-res, interiors prefer low-res).
+    """
+    def __init__(self, num_scales=4, mid_channels=16):
+        super(MultiScaleFusion, self).__init__()
+        self.scale_attn = nn.Sequential(
+            nn.Conv2d(num_scales, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, num_scales, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, predictions):
+        """
+        Args:
+            predictions: list of tensors [p4, p3, p2, p1], each [B, 1, H, W]
+        Returns:
+            fused: [B, 1, H, W] attention-weighted fusion
+        """
+        stacked = torch.cat(predictions, dim=1)   # [B, 4, H, W]
+        weights = self.scale_attn(stacked)         # [B, 4, H, W]
+        fused = (stacked * weights).sum(dim=1, keepdim=True)  # [B, 1, H, W]
+        return fused
+
+
 class EMCADNet(nn.Module):
     def __init__(self, num_classes=1, kernel_sizes=[1,3,5], expansion_factor=2, dw_parallel=True, add=True, lgag_ks=3, activation='relu', encoder='pvt_v2_b2', pretrain=True, pretrained_dir='./pretrained_pth/pvt/'):
         super(EMCADNet, self).__init__()
@@ -85,6 +115,12 @@ class EMCADNet(nn.Module):
         self.out_head2 = nn.Conv2d(channels[2], num_classes, 1)
         self.out_head1 = nn.Conv2d(channels[3], num_classes, 1)
         
+        # Learned multi-scale fusion module
+        self.fusion = MultiScaleFusion(num_scales=4, mid_channels=16)
+        
+        print('Model %s created, param count: %d' %
+                     ('Multi-Scale Fusion: ', sum([m.numel() for m in self.fusion.parameters()])))
+        
     def forward(self, x, mode='test'):
         
         # if grayscale input, convert to 3 channels
@@ -109,10 +145,10 @@ class EMCADNet(nn.Module):
         p2 = F.interpolate(p2, scale_factor=8, mode='bilinear')
         p1 = F.interpolate(p1, scale_factor=4, mode='bilinear')
 
-        if mode == 'test':
-            return [p4, p3, p2, p1]
-        
-        return [p4, p3, p2, p1]
+        # Learned multi-scale fusion (replaces naive sum)
+        fused = self.fusion([p4, p3, p2, p1])
+
+        return [p4, p3, p2, p1, fused]
                
 
         

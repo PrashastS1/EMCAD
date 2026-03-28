@@ -130,10 +130,10 @@ def train(train_loader, model, optimizer, epoch, opt, model_name):
             loss_p2 = structure_loss(P[1], gts)
             loss_p3 = structure_loss(P[2], gts)
             loss_p4 = structure_loss(P[3], gts)
-            loss_p1234 = structure_loss(P[0]+P[1]+P[2]+P[3], gts)
+            loss_fused = structure_loss(P[4], gts)  # Learned multi-scale fusion
 
             weights = [1, 1, 1, 1, 1]
-            loss = weights[0]*loss_p1 + weights[1]*loss_p2 + weights[2]*loss_p3 + weights[3]*loss_p4 + weights[4]*loss_p1234
+            loss = weights[0]*loss_p1 + weights[1]*loss_p2 + weights[2]*loss_p3 + weights[3]*loss_p4 + weights[4]*loss_fused
 
             loss.backward()
             clip_gradient(optimizer, opt.clip)
